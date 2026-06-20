@@ -8,6 +8,104 @@ Can a JEPA learn to **understand** a Minecraft-like survival world — without r
 
 We port Meta FAIR's Energy-Based JEPA from a simple 2D toy environment (Two Rooms) to **Crafter**, a procedurally-generated survival game with 17 actions, inventory management, enemies, and crafting. The model learns an abstract latent representation of the world purely from random exploration, and we prove it captures meaningful game state.
 
+---
+
+## Why JEPA? The LeCun Thesis
+
+Most world models reconstruct pixels (like Dreamer). JEPA takes a radically different approach: **predict in latent space, not pixel space**. The encoder compresses observations into abstract representations, and the predictor operates entirely in that compressed space. No decoder is ever needed.
+
+Why does this matter? Pixel-level prediction wastes capacity on textures, lighting, and irrelevant visual details. A latent predictor can focus on what actually changes in the world — the agent moved, a tree was chopped, health decreased. This is LeCun's thesis: *understand the structure of the world, don't memorize its appearance.*
+
+## Why Crafter?
+
+The original EB-JEPA was demonstrated on **Two Rooms** — a dot navigating two rooms with a wall and door. 2 continuous actions, deterministic physics, 65×65 grayscale. It's a proof of concept, not a test of real-world complexity.
+
+**Crafter** is a different beast entirely:
+- **17 discrete actions** (move, craft, fight, sleep, place)
+- **Procedurally-generated worlds** — every episode has different terrain, resource placement, and enemy spawns
+- **Survival mechanics** — health, food, drink, energy that deplete over time
+- **Inventory and crafting** — collect wood/stone/iron, craft tools and weapons
+- **Enemies** — zombies and skeletons that attack at night
+- **64×64 RGB** observations with complex visual semantics
+
+The question: does the JEPA architecture — designed for a toy world — scale to this complexity?
+
+## Architecture & Design Choices
+
+```
+Crafter RGB (64×64×3)
+    │
+    ▼
+ImpalaEncoder (3 ResNet stacks, MaxPool)
+    │
+    ▼
+512-dim latent [B, 512, T, 1, 1]
+    │                    ┌─────────────────────┐
+    ▼                    │ nn.Embedding(17, 32) │
+GRU Predictor ◄──────── │ (discrete actions)   │
+    │                    └─────────────────────┘
+    ▼
+Next latent state
+    │
+    ├──► VCReg (variance + covariance regularization)
+    ├──► Temporal Similarity loss
+    └──► IDM (Inverse Dynamics Model, cross-entropy)
+```
+
+### Key architectural decisions and why
+
+**1. Discrete action encoder: `nn.Embedding(17, 32)`**
+
+Two Rooms uses continuous 2D actions passed directly to the GRU (`nn.Identity()`). Crafter has 17 discrete actions — "move left", "place stone", "make iron sword", etc. We embed each action into a learned 32-dimensional vector. The GRU predictor receives these embeddings as input, so it learns action-conditioned dynamics in a continuous space. 32 dims is enough to differentiate 17 actions while keeping the predictor lightweight.
+
+**2. IDM head: 17 logits + cross-entropy (not MSE)**
+
+The Inverse Dynamics Model predicts *which action caused a state transition*. In Two Rooms, it regresses 2 continuous action values with MSE. For discrete Crafter actions, we output 17 logits and use cross-entropy classification. This is the natural loss for categorical targets and gives cleaner gradients than treating action IDs as regression targets.
+
+**3. ImpalaEncoder preserved (not ResNet/ViT)**
+
+We keep the ImpalaEncoder from the original — 3 ResNet stacks with MaxPool, producing a flat 512-dim latent via a linear projection. It's fast, proven on RL environments (DeepMind's IMPALA agent), and already integrated with the JEPA training loop. Going bigger (ResNet-50, ViT) would be premature for a 64×64 input and a 24h hackathon.
+
+**4. VCReg + IDM regularization (critical, not optional)**
+
+The EB-JEPA paper shows that without regularization, the encoder **collapses** — it maps everything to the same representation, achieving zero prediction error by being useless. VCReg (variance + covariance) prevents this by encouraging diverse, decorrelated features. The IDM loss forces features to be *action-relevant* — if two states look the same to the encoder but different actions connect them, the encoder must learn to distinguish them. Our ablation confirms this is load-bearing in Crafter too.
+
+**5. Autoregressive unroll with GRU (not parallel Conv)**
+
+The predictor is a GRU that steps forward one timestep at a time, feeding its own output back as input. This is necessary for planning (imagining multi-step futures from a single frame) and matches how the model would be used at inference. The alternative — parallel convolution — requires ground-truth frames at every step and can't extrapolate.
+
+## Data: Learning from Random Exploration
+
+We collect **1000 episodes** (~170k transitions) of a random policy playing Crafter. No reward shaping, no curriculum, no expert demonstrations — just uniform random actions.
+
+Why random? We're training a **world model**, not an agent. We need diverse state coverage: different terrains, day/night, various inventory states, encounters with enemies. A random policy naturally visits a wide range of states. A trained agent would be biased toward optimal play paths, which is actually *worse* for learning general dynamics.
+
+Each transition stores: RGB observation (64×64×3, uint8), discrete action (int 0-16), and 16 game-state labels (health, food, drink, energy, 6 resource counts, 6 tool flags) for later probe evaluation.
+
+**Per-channel z-score normalization** is mandatory — the VCReg loss assumes zero-mean inputs. Without it, the encoder can cheat by encoding the global color bias.
+
+## Training
+
+- **12 epochs** on 1000 episodes (~170k transitions)
+- **NVIDIA GB200 GPU** (Grace-Blackwell, aarch64) at the Dalia cluster
+- **~44 minutes** per training run
+- **bfloat16** mixed precision, batch size 64, 8-step autoregressive rollout
+- **3 runs:** Full model (2 seeds) + IDM ablation (idm_coeff=0)
+- AdamW optimizer, lr=0.001, cosine warmup schedule
+
+## What we changed from Two Rooms
+
+| Component | Two Rooms (original) | Crafter (ours) |
+|-----------|---------------------|----------------|
+| Actions | 2 continuous (`nn.Identity`) | 17 discrete (`nn.Embedding(17, 32)`) |
+| IDM loss | MSE regression | Cross-entropy classification |
+| Observations | 2-channel 65×65 | 3-channel RGB 64×64 |
+| Data | On-the-fly simulation | Pre-collected offline trajectories (.npz) |
+| Probe | XY position (2D) | 16 game state features (health, inventory) |
+| Environment | Dot + wall + door | Survival game with enemies, inventory, crafting |
+
+---
+
 ## Results
 
 ### The model learns to imagine the future
@@ -52,17 +150,6 @@ Given a single starting frame and a sequence of actions, the model imagines what
   <img src="eval_results/rollout_full/dreaming_sample_0.png" width="900"/>
 </p>
 
-## What we changed from the original EB-JEPA
-
-| Component | Two Rooms (original) | Crafter (ours) |
-|-----------|---------------------|----------------|
-| Actions | 2 continuous (`nn.Identity`) | 17 discrete (`nn.Embedding(17, 32)`) |
-| IDM loss | MSE regression | Cross-entropy classification |
-| Observations | 2-channel 65×65 | 3-channel RGB 64×64 |
-| Data | On-the-fly simulation | Pre-collected offline trajectories |
-| Probe | XY position (2D) | 16 game state features |
-| Environment | Dot + wall + door | Survival game with enemies, inventory, crafting |
-
 ## Quick Start
 
 ```bash
@@ -98,28 +185,6 @@ sbatch scripts/train_crafter.sh              # Full model
 sbatch scripts/train_crafter.sh --ablation   # IDM ablation
 sbatch scripts/train_crafter.sh --seed 1000  # Second seed
 sbatch scripts/run_all_evals.sh              # All evaluations
-```
-
-## Architecture
-
-```
-Crafter RGB (64×64×3)
-    │
-    ▼
-ImpalaEncoder (3 ResNet stacks, MaxPool)
-    │
-    ▼
-512-dim latent [B, 512, T, 1, 1]
-    │                    ┌─────────────────────┐
-    ▼                    │ nn.Embedding(17, 32) │
-GRU Predictor ◄──────── │ (discrete actions)   │
-    │                    └─────────────────────┘
-    ▼
-Next latent state
-    │
-    ├──► VCReg (variance + covariance regularization)
-    ├──► Temporal Similarity loss
-    └──► IDM (Inverse Dynamics Model, cross-entropy)
 ```
 
 ## Project Structure
