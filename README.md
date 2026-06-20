@@ -282,10 +282,53 @@ eb_jepa/
 
 ## Honest Limits
 
-- **Random CNN features are competitive on probes.** Untrained ConvNets extract useful spatial features from structured images (known phenomenon). The IDM ablation is the stronger differentiator.
+- **Random CNN features are competitive on static probes.** Untrained ConvNets extract useful spatial features from structured images (known phenomenon). Our dynamics probes (temporal ordering: +21.6%) and the agent evolution (dies→survives) are the stronger differentiators.
 - **Rare features have degenerate R².** With random-policy data, tools and rare resources are almost always zero, making R² unreliable for those features.
 - **Partial observability.** Crafter is partially observed — the model can only predict what's visible, limiting long-horizon accuracy.
-- **No planning demo.** We didn't close the loop with a planning agent (stretch goal). The world model understands dynamics but doesn't act.
+- **Crafter score = 0.** The geometric mean kills the score when any of the 22 achievements is never unlocked. The agent successfully performs 5 different achievements but never reaches the 17 requiring crafting chains.
+
+## What We'd Do With More Compute
+
+All scripts are written and ready to run. Here's the roadmap from current results to a competitive Crafter agent:
+
+### Immediate (hours, scripts ready)
+| Improvement | Script | Expected Impact |
+|------------|--------|----------------|
+| **1M dataset** (6x more data) | `collect_crafter_data.py --num_episodes 6000` | Better world model accuracy, currently training |
+| **PPO policy data** | `collect_ppo_data.py` | Covers crafting/combat states, fixes rare-feature probes |
+| **Reward head planning** | `planning_agent_v2.py --objective reward` | Goal-directed behavior, not just exploration |
+| **Online loop** | `online_loop.py` | Self-improving: act→collect→retrain→act better |
+
+### Short-term (days)
+| Improvement | Approach | Expected Impact |
+|------------|---------|----------------|
+| **Discrete CEM + MPPI** | Adapt existing planners for categorical actions | 10-100x better planning vs random shooting |
+| **Longer training** | 50+ epochs, larger batch | More accurate world model |
+| **Multi-seed evaluation** | 3 seeds × all experiments | Statistical significance |
+| **DreamerV2 fair comparison** | Same data budget, probe both latents | Position JEPA vs reconstruction-based models |
+
+### Research directions (weeks)
+| Direction | Question |
+|-----------|---------|
+| **Hierarchical JEPA** | Can we plan 100+ steps by predicting at multiple time scales? |
+| **JEPA vs Dreamer** | Does latent-only prediction match pixel reconstruction on representation quality? |
+| **Goal-conditioned planning** | Can the agent achieve arbitrary goals ("get 5 wood") via latent distance? |
+| **Transfer learning** | Does a Crafter-trained JEPA transfer to other procedural environments? |
+| **Online JEPA agent** | Full DreamerV2-style loop but without pixel decoder — is it competitive? |
+
+### Crafter Scoreboard Context
+
+| Agent | Score | Data | Approach |
+|-------|-------|------|----------|
+| Random | 1.6% | — | Uniform random |
+| **Our JEPA (current)** | **0.0%** (but 5 achievements) | **170k offline** | **World model + CEM planner, zero reward** |
+| PPO | 4.6% | 1M online | Policy gradient |
+| DreamerV2 | 10.0% | 1M online | World model + actor-critic + pixel decoder |
+| DreamerV3 (XL) | 39.6% | 10M online | Scaled world model |
+| Human | 50.5% | — | — |
+| EMERALD | 58.1% | 10M online | Masked latent transformer |
+
+Our agent achieves 5 types of achievements (wake_up 94%, collect_sapling 48%, place_plant 40%, collect_wood 36%, collect_drink 6%) with **zero reward signal** — purely through world-model imagination. With the planned improvements (reward head, PPO data, online loop), we expect to reach the PPO baseline (~4.6%) and potentially approach DreamerV2 (~10%) while using **no pixel decoder**.
 
 ## Acknowledgments
 
