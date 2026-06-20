@@ -1,0 +1,38 @@
+{
+  "epochs": [
+    0,
+    5,
+    11
+  ],
+  "config": {
+    "max_steps": 100,
+    "num_samples": 100,
+    "horizon": 8,
+    "num_episodes": 1,
+    "seed": 42
+  },
+  "per_epoch": {
+    "0": {
+      "length": 59,
+      "total_reward": -0.9,
+      "achievements": [],
+      "num_frames": 60
+    },
+    "5": {
+      "length": 100,
+      "total_reward": 1.0,
+      "achievements": [
+        "wake_up"
+      ],
+      "num_frames": 101
+    },
+    "11": {
+      "length": 100,
+      "total_reward": 1.0,
+      "achievements": [
+        "wake_up"
+      ],
+      "num_frames": 101
+    }
+  }
+}
