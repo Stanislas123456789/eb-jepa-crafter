@@ -156,23 +156,23 @@ The **temporal ordering result** is the clearest differentiator: the trained enc
 
 ### The model plays via imagination
 
-Using the world model as a mental simulator, a planning agent acts in Crafter by imagining futures:
-- Sample 200 random action sequences of length 10
-- Unroll the world model for each → "what happens if I do this?"
-- Pick the sequence whose final state is most different from current (exploration)
-- Execute the first action, replan every step
+Using the world model as a mental simulator, a planning agent acts in Crafter. We built two versions:
 
-| Achievement | Planning Agent | Random Policy |
-|-------------|---------------|---------------|
-| **wake_up** | **94%** | ~50% |
-| **collect_sapling** | **48%** | ~15% |
-| **place_plant** | **40%** | ~10% |
-| collect_wood | 6% | ~3% |
-| collect_drink | 2% | ~1% |
+**v1: Random Shooting** — sample 200 random action sequences, pick the most novel future
+**v2: Discrete CEM** — Cross-Entropy Method with 300 samples, 30 elites, 5 iterations, horizon 20 steps. Uses probe-based objectives (survival, resources, composite).
 
-The agent acts purely through imagination — no reward signal, no RL training. It survives (94% wake up), gathers resources (48% saplings), and interacts with the world (40% place plants) far better than random.
+| Achievement | Random Policy | v1 (exploration) | v2 CEM (survival) | v2 CEM (composite) |
+|-------------|--------------|-------------------|--------------------|--------------------|
+| **wake_up** | ~50% | 94% | 90% | **100%** |
+| **collect_wood** | ~3% | 2% | 30% | **36%** |
+| **collect_sapling** | ~15% | 48% | 26% | **32%** |
+| **place_plant** | ~10% | 40% | 20% | **28%** |
+| **collect_drink** | ~1% | 0% | 2% | **6%** |
+| Mean reward | ~0.3 | 0.90 | 0.77 | **1.12** |
 
-**Crafter score: 0.00** (geometric mean — any zero-achievement kills it). A v2 planner with CEM + survival objectives is running.
+The v2 CEM composite planner achieves **100% wake_up** and **36% wood collection** — a dramatic improvement over random policy. It plans by imagining futures and steering toward states where the probe predicts high health + resources. No reward signal, no RL training — pure imagination.
+
+**Crafter score: 0.00** (geometric mean — any zero-achievement among 22 kills it). The agent successfully performs 5 different achievements but never reaches the 17 others (crafting, combat) because our world model was trained on random-policy data that never demonstrates those behaviors.
 
 ### Training dynamics
 
