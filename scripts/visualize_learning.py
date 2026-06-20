@@ -585,8 +585,13 @@ def main():
         # Convert figure to RGB array for GIF
         fig.canvas.draw()
         w, h = fig.canvas.get_width_height()
-        img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-        img = img.reshape((h, w, 3))
+        try:
+            buf = fig.canvas.tostring_rgb()
+        except AttributeError:
+            buf = fig.canvas.buffer_rgba()
+            img = np.frombuffer(buf, dtype=np.uint8).reshape((h, w, 4))[:, :, :3]
+        else:
+            img = np.frombuffer(buf, dtype=np.uint8).reshape((h, w, 3))
         frames.append(img)
 
         plt.close(fig)
