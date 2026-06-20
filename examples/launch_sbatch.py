@@ -67,15 +67,15 @@ from eb_jepa.training_utils import (
     load_config,
 )
 
-# Default SLURM parameters
+# Default SLURM parameters (Dalia @ IDRIS / Hack The Worlds)
 SLURM_DEFAULTS = {
-    "mem_per_gpu": "210G",
+    "mem_per_gpu": "64G",
     "cpus_per_task": 16,
-    "timeout_min": 24 * 60,
-    "partition": "learn",
+    "timeout_min": 2 * 60,
+    "partition": "defq",
     "gpus_per_node": 1,
-    "qos": "lowest",
-    "account": "fair_amaia_cw_video",
+    "qos": "normal",
+    "account": "vivatech-dreamingmachines",
 }
 
 
@@ -120,7 +120,7 @@ def make_executor(
         "slurm_additional_parameters": {
             "nodes": 1,
             "ntasks-per-node": 1,
-            "gpus-per-node": SLURM_DEFAULTS["gpus_per_node"],
+            "gres": "gpu:b200:1",
             "qos": SLURM_DEFAULTS["qos"],
             "account": SLURM_DEFAULTS["account"],
         },

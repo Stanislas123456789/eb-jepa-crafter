@@ -132,20 +132,24 @@ class TemporalSimilarityLoss(torch.nn.Module):
 
 
 class InverseDynamicsLoss(torch.nn.Module):
-    def __init__(self, idm: nn.Module):
+    def __init__(self, idm: nn.Module, discrete: bool = False):
         """
         Predicts actions from consecutive states and compares with ground truth actions.
         Args:
             idm (nn.Module): Inverse dynamics model that takes (state_t, state_t+1) and predicts action
+            discrete (bool): If True, use cross-entropy loss for discrete action indices.
+                             If False, use MSE loss for continuous actions.
         """
         super().__init__()
         self.idm = idm
+        self.discrete = discrete
 
     def forward(self, x: torch.Tensor, actions: torch.Tensor):
         """
         Args:
             x: [T, B, D] - States across time steps
-            actions: [B, A, T] - Ground truth actions between consecutive states
+            actions: [B, A, T] - Ground truth continuous actions (when discrete=False)
+                  or [B, T] - Ground truth discrete action indices (when discrete=True)
         """
         if x.shape[0] <= 1 or actions is None:
             return torch.tensor(0.0, device=x.device)
@@ -159,10 +163,17 @@ class InverseDynamicsLoss(torch.nn.Module):
         states_t_plus_1_flat = states_t_plus_1.reshape(-1, d)  # [B*(T-1), D]
 
         pred_actions = self.idm(states_t_flat, states_t_plus_1_flat)  # [B*(T-1), A]
-        target_actions = actions.transpose(1, 2)[:, :-1].reshape(
-            -1, actions.size(1)
-        )  # [B*(T-1), A]
-        idm_loss = F.mse_loss(pred_actions, target_actions)
+
+        if self.discrete:
+            # actions: [B, T] int64 -> target: [B*(T-1)] int64
+            target_actions = actions[:, :-1].reshape(-1)  # [B*(T-1)]
+            idm_loss = F.cross_entropy(pred_actions, target_actions)
+        else:
+            # actions: [B, A, T] float -> target: [B*(T-1), A]
+            target_actions = actions.transpose(1, 2)[:, :-1].reshape(
+                -1, actions.size(1)
+            )  # [B*(T-1), A]
+            idm_loss = F.mse_loss(pred_actions, target_actions)
 
         return idm_loss
 
@@ -181,6 +192,7 @@ class VC_IDM_Sim_Regularizer(torch.nn.Module):
         spatial_as_samples: bool = False,
         sim_t_after_proj: bool = False,
         idm_after_proj: bool = False,
+        discrete: bool = False,
     ):
         """
         Composite Regularizer combining multiple losses
@@ -203,6 +215,7 @@ class VC_IDM_Sim_Regularizer(torch.nn.Module):
             spatial_as_samples (bool): Treat spatial locations as samples
             sim_t_after_proj (bool): Apply temporal loss after projection
             idm_after_proj (bool): Apply IDM loss after projection
+            discrete (bool): If True, use cross-entropy for IDM loss (discrete actions)
         """
         super().__init__()
         self.cov_coeff = cov_coeff
@@ -220,7 +233,7 @@ class VC_IDM_Sim_Regularizer(torch.nn.Module):
         self.std_loss_fn = HingeStdLoss(std_margin=std_margin)
         self.cov_loss_fn = CovarianceLoss()
         self.sim_loss_fn = TemporalSimilarityLoss()
-        self.idm_loss_fn = InverseDynamicsLoss(idm) if idm is not None else None
+        self.idm_loss_fn = InverseDynamicsLoss(idm, discrete=discrete) if idm is not None else None
 
     def forward(self, x, actions=None):
         """

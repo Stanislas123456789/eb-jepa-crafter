@@ -19,27 +19,22 @@ authors = [
 dependencies = [
     "einops>=0.8.1",
     "fire>=0.7.0",
-    "huggingface-hub>=0.33.2",
-    "matplotlib>=3.10.3",
-    "opencv-python>=4.12.0.88",
-    "pudb>=2025.1",
-    "scikit-learn>=1.7.0",
-    "tiktoken>=0.9.0",
-    "torch==2.6.0",
-    "torchcodec>=0.4.0",
+    "matplotlib",
+    "opencv-python-headless",
+    "scikit-learn",
+    "torch>=2.6.0",
     "torchvision",
-    "wandb[media]>=0.21.1",
-    "gymnasium>=1.1.1",
+    "wandb",
     "imageio",
     "seaborn",
-    "submitit",
     "tqdm",
-    "pymunk",
-    "decord",
     "omegaconf",
     "ruamel.yaml",
+    "numpy",
+    "pandas",
+    "crafter",
 ]
-requires-python = "==3.12.*"
+requires-python = ">=3.10"
 
 [build-system]
 requires = ["setuptools>=61.0"]

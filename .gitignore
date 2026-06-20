@@ -229,3 +229,20 @@ eb_jepa_ICLR/
 arxiv/
 arxiv_tmp/
 CLAUDE.md
+
+# Hackathon additions
+data/
+eval_results/
+*.npz
+.ssh/
+*.pem
+crafter_env/
+slurm-*.out
+slurm-*.err
+setup-arm-*.out
+setup-arm-*.err
+test-torch-*.out
+test-torch-*.err
+eval-*.out
+eval-*.err
+

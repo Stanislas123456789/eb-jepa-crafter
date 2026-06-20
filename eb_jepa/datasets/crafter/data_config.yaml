@@ -1,0 +1,10 @@
+# Crafter dataset config
+data_dir: "${oc.env:EBJEPA_DSETS,data}/crafter_trajectories"
+sample_length: 17
+batch_size: 64
+num_workers: 4
+pin_mem: true
+persistent_workers: true
+img_size: 64
+size: 0  # auto from data
+val_size: 0

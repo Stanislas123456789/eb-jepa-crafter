@@ -129,7 +129,7 @@ class JEPA(JEPAbase):
         else:
             rloss = rloss_unweight = rloss_dict = ploss = None
 
-        # Encode actions
+        # Encode actions (before mode checks so encoded shape is available)
         if actions is not None:
             actions_encoded = self.action_encoder(actions)
         else:
@@ -159,9 +159,10 @@ class JEPA(JEPAbase):
         # Autoregressive mode: step-by-step with sliding window
         # Note: RNN predictors (is_rnn=True) are a special case with ctxt_window_time=1
         elif unroll_mode == "autoregressive":
-            if actions is not None and nsteps > actions.size(2):
+            # Check action sequence length (use encoded actions which are always 3D [B,D,T])
+            if actions_encoded is not None and nsteps > actions_encoded.size(2):
                 raise ValueError(
-                    f"nsteps ({nsteps}) larger than action sequence length ({actions.size(2)})"
+                    f"nsteps ({nsteps}) larger than action sequence length ({actions_encoded.size(2)})"
                 )
             # For RNN predictors, force ctxt_window_time=1
             effective_ctxt_window = 1 if self.single_unroll else ctxt_window_time

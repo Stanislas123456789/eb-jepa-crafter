@@ -1,0 +1,51 @@
+logging:
+  log_wandb: false
+  wandb_group:
+  log_every: 10
+  save_every_n_epochs: 1
+  tqdm_silent: false
+meta:
+  model_folder:
+  load_model: false
+  enable_plan_eval: false
+  eval_every_itr: -1
+  light_eval_freq: 50
+  seed: 1
+data:
+  env_name: crafter
+  data_dir: "${oc.env:EBJEPA_DSETS,data}/crafter_trajectories"
+  sample_length: 17
+  batch_size: 64
+  num_workers: 4
+  pin_mem: true
+  persistent_workers: true
+training:
+  use_amp: true
+  dtype: bfloat16
+model:
+  compile: false
+  dobs: 3
+  henc: 32
+  hpre: 32
+  dstc: 32
+  nsteps: 8
+  num_actions: 17
+  d_action_emb: 32
+  discrete_actions: true
+  encoder_architecture: impala
+  regularizer:
+    cov_coeff: 8
+    std_coeff: 16
+    sim_coeff_t: 12
+    idm_coeff: 1
+    first_t_only: false
+    spatial_as_samples: false
+    use_proj: false
+    idm_after_proj: false
+    sim_t_after_proj: false
+optim:
+  epochs: 12
+  lr: 0.001
+  grad_clip_enc: 2.0
+  grad_clip_pred: 2.0
+  weight_decay: 1.e-5

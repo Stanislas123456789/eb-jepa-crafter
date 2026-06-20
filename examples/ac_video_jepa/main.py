@@ -13,6 +13,7 @@ from torch.amp import GradScaler, autocast
 from torch.optim import AdamW
 from tqdm import tqdm
 
+from eb_jepa.action_encoders import ActionEmbeddingEncoder
 from eb_jepa.architectures import (
     ImpalaEncoder,
     InverseDynamicsModel,
@@ -162,6 +163,8 @@ def run(
     print(f"Saved complete config to {config_path}")
 
     # -- MODEL
+    discrete_actions = cfg.model.get("discrete_actions", False)
+
     test_input = torch.rand(
         (
             1,
@@ -184,10 +187,24 @@ def run(
     )
     test_output = encoder(test_input)
     _, f, _, h, w = test_output.shape
-    predictor = RNNPredictor(
-        hidden_size=encoder.mlp_output_dim, final_ln=encoder.final_ln
-    )
-    aencoder = nn.Identity()
+
+    if discrete_actions:
+        # Discrete action setup (e.g., Crafter with 17 actions)
+        d_action_emb = cfg.model.get("d_action_emb", 32)
+        num_actions = cfg.model.get("num_actions", 17)
+        aencoder = ActionEmbeddingEncoder(num_actions, d_action_emb)
+        predictor = RNNPredictor(
+            hidden_size=encoder.mlp_output_dim,
+            action_dim=d_action_emb,
+            final_ln=encoder.final_ln,
+        )
+    else:
+        # Continuous action setup (e.g., Two Rooms with 2D actions)
+        predictor = RNNPredictor(
+            hidden_size=encoder.mlp_output_dim, final_ln=encoder.final_ln
+        )
+        aencoder = nn.Identity()
+
     if cfg.model.regularizer.use_proj:
         projector = Projector(
             f"{encoder.mlp_output_dim}-{encoder.mlp_output_dim*4}-{encoder.mlp_output_dim*4}"
@@ -195,12 +212,18 @@ def run(
     else:
         projector = None
     logger.info(f"Encoder output: {tuple(test_output.shape)}")
+
+    if discrete_actions:
+        idm_action_dim = cfg.model.get("num_actions", 17)
+    else:
+        idm_action_dim = 2
+
     idm = InverseDynamicsModel(
         state_dim=h
         * w
         * (projector.out_dim if cfg.model.regularizer.idm_after_proj else f),
         hidden_dim=256,
-        action_dim=2,
+        action_dim=idm_action_dim,
     ).to(device)
     regularizer = VC_IDM_Sim_Regularizer(
         cov_coeff=cfg.model.regularizer.cov_coeff,
@@ -213,6 +236,7 @@ def run(
         spatial_as_samples=cfg.model.regularizer.spatial_as_samples,
         idm_after_proj=cfg.model.regularizer.idm_after_proj,
         sim_t_after_proj=cfg.model.regularizer.sim_t_after_proj,
+        discrete=discrete_actions,
     )
     ploss = SquareLossSeq()
     jepa = JEPA(encoder, aencoder, predictor, regularizer, ploss).to(device)
@@ -224,16 +248,21 @@ def run(
 
     log_config(cfg)
 
-    # -- PROBER
-    xy_head = MLPXYHead(
-        input_shape=test_output.shape[1],
-        normalizer=loader.dataset.normalizer,
-    ).to(device)
-    xy_prober = JEPAProbe(
-        jepa=jepa,
-        head=xy_head,
-        hcost=nn.MSELoss(),
-    )
+    # -- PROBER (only for environments with XY location data, e.g., Two Rooms)
+    enable_probe = cfg.data.env_name != "crafter"
+    if enable_probe:
+        xy_head = MLPXYHead(
+            input_shape=test_output.shape[1],
+            normalizer=loader.dataset.normalizer,
+        ).to(device)
+        xy_prober = JEPAProbe(
+            jepa=jepa,
+            head=xy_head,
+            hcost=nn.MSELoss(),
+        )
+    else:
+        xy_head = None
+        xy_prober = None
 
     jepa_optimizer = AdamW(
         jepa.parameters(),
@@ -242,8 +271,12 @@ def run(
     )
     jepa_scheduler = CosineWithWarmup(jepa_optimizer, total_steps, warmup_ratio=0.1)
 
-    probe_optimizer = AdamW(xy_head.parameters(), lr=1e-3, weight_decay=1e-5)
-    probe_scheduler = CosineWithWarmup(probe_optimizer, total_steps, warmup_ratio=0.1)
+    if enable_probe:
+        probe_optimizer = AdamW(xy_head.parameters(), lr=1e-3, weight_decay=1e-5)
+        probe_scheduler = CosineWithWarmup(probe_optimizer, total_steps, warmup_ratio=0.1)
+    else:
+        probe_optimizer = None
+        probe_scheduler = None
 
     # -- LOAD CKPT
     start_epoch = 0
@@ -254,7 +287,7 @@ def run(
             checkpoint_path, jepa, jepa_optimizer, jepa_scheduler, device=device
         )
         start_epoch = ckpt_info.get("epoch", 0)
-        if "xy_head_state_dict" in ckpt_info:
+        if enable_probe and "xy_head_state_dict" in ckpt_info:
             xy_head.load_state_dict(ckpt_info["xy_head_state_dict"])
 
     # Compile
@@ -343,20 +376,23 @@ def run(
             scaler.update()
             jepa_scheduler.step()
 
-            # Calculate probe loss
-            probe_optimizer.zero_grad()
-            with autocast(device.type, enabled=use_amp, dtype=dtype):
-                xy_loss = xy_prober(
-                    observations=x[:, :, :1],
-                    targets=loc[:, :, :1],
-                )
-                xy_loss = loader.dataset.normalizer.unnormalize_mse(xy_loss)
-                total_loss += xy_loss
+            # Calculate probe loss (only for envs with XY location data)
+            if enable_probe:
+                probe_optimizer.zero_grad()
+                with autocast(device.type, enabled=use_amp, dtype=dtype):
+                    xy_loss = xy_prober(
+                        observations=x[:, :, :1],
+                        targets=loc[:, :, :1],
+                    )
+                    xy_loss = loader.dataset.normalizer.unnormalize_mse(xy_loss)
+                    total_loss += xy_loss
 
-            scaler.scale(xy_loss).backward()
-            scaler.step(probe_optimizer)
-            scaler.update()
-            probe_scheduler.step()
+                scaler.scale(xy_loss).backward()
+                scaler.step(probe_optimizer)
+                scaler.update()
+                probe_scheduler.step()
+            else:
+                xy_loss = torch.tensor(0.0, device=device)
 
             # Update progress bar
             pbar.set_postfix(
@@ -379,7 +415,7 @@ def run(
                     "epoch": epoch,
                     "itr_time": itr_time,
                     "optim/jepa_lr": jepa_optimizer.param_groups[0]["lr"],
-                    "optim/probe_lr": probe_optimizer.param_groups[0]["lr"],
+                    "optim/probe_lr": probe_optimizer.param_groups[0]["lr"] if probe_optimizer else 0.0,
                 }
                 for loss_name, loss_value in regldict.items():
                     log_data[f"train/regl/{loss_name}"] = loss_value
@@ -452,6 +488,12 @@ def run(
             )
 
         # Save checkpoint
+        ckpt_extras = {}
+        if enable_probe:
+            ckpt_extras["xy_head_state_dict"] = xy_head.state_dict()
+            ckpt_extras["probe_optimizer_state_dict"] = probe_optimizer.state_dict()
+            ckpt_extras["probe_scheduler_state_dict"] = probe_scheduler.state_dict()
+
         save_checkpoint(
             latest_ckpt_path,
             model=jepa,
@@ -459,9 +501,7 @@ def run(
             scheduler=jepa_scheduler,
             epoch=epoch,
             step=global_step,
-            xy_head_state_dict=xy_head.state_dict(),
-            probe_optimizer_state_dict=probe_optimizer.state_dict(),
-            probe_scheduler_state_dict=probe_scheduler.state_dict(),
+            **ckpt_extras,
         )
         if epoch % cfg.logging.save_every_n_epochs == 0:
             save_checkpoint(
@@ -471,9 +511,7 @@ def run(
                 scheduler=jepa_scheduler,
                 epoch=epoch,
                 step=global_step,
-                xy_head_state_dict=xy_head.state_dict(),
-                probe_optimizer_state_dict=probe_optimizer.state_dict(),
-                probe_scheduler_state_dict=probe_scheduler.state_dict(),
+                **ckpt_extras,
             )
 
 
