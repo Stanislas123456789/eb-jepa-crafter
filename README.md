@@ -108,6 +108,19 @@ Each transition stores: RGB observation (64×64×3, uint8), discrete action (int
 
 ## Results
 
+### Watch the model learn (93.6% improvement in 12 epochs)
+
+<p align="center">
+  <img src="eval_results/learning_viz/learning_progress.gif" width="800"/>
+</p>
+
+Each frame = one training epoch. The bars show prediction error at each horizon step. **Watch them collapse to near-zero** as the model learns to imagine the future. Epoch 0: MSE=0.276 (can't predict). Epoch 11: MSE=0.018 (accurate 16 steps ahead).
+
+<p align="center">
+  <img src="eval_results/learning_viz/horizon_heatmap.png" width="600"/>
+  <img src="eval_results/learning_viz/learning_curve.png" width="600"/>
+</p>
+
 ### The model learns to imagine the future
 
 The JEPA predictor autoregressively rolls out future latent states given actions. It achieves **3.8x lower error** than simply repeating the current state:
