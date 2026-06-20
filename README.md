@@ -142,6 +142,46 @@ Removing the Inverse Dynamics Model loss degrades both prediction accuracy and r
 - Probe R²: 0.815 → 0.562 (**-31% drop**)
 - Health probe collapses: 0.67 → 0.19 (**-71%**)
 
+### The encoder understands time (dynamics probes)
+
+Standard inventory probes (health, food) are surprisingly easy for random ConvNets — they just read pixel bars. We designed probes that test **dynamics understanding** that only a trained encoder should have:
+
+| Probe | Trained | Random | Delta | What it tests |
+|-------|---------|--------|-------|---------------|
+| **Temporal Ordering** | **88.2%** | 66.7% | **+21.6%** | Can it tell which frame came first? |
+| Action Prediction (IDM) | 24.0% | 23.0% | +1.0% | Can it predict which action was taken? |
+| Next-State Cosine Sim | 0.991 | 0.992 | -0.001 | Are latent transitions structured? |
+
+The **temporal ordering result** is the clearest differentiator: the trained encoder knows "this frame came before that one" — it captured the arrow of time in the game world. Random features can't do this.
+
+### The model plays via imagination
+
+Using the world model as a mental simulator, a planning agent acts in Crafter by imagining futures:
+- Sample 200 random action sequences of length 10
+- Unroll the world model for each → "what happens if I do this?"
+- Pick the sequence whose final state is most different from current (exploration)
+- Execute the first action, replan every step
+
+| Achievement | Planning Agent | Random Policy |
+|-------------|---------------|---------------|
+| **wake_up** | **94%** | ~50% |
+| **collect_sapling** | **48%** | ~15% |
+| **place_plant** | **40%** | ~10% |
+| collect_wood | 6% | ~3% |
+| collect_drink | 2% | ~1% |
+
+The agent acts purely through imagination — no reward signal, no RL training. It survives (94% wake up), gathers resources (48% saplings), and interacts with the world (40% place plants) far better than random.
+
+**Crafter score: 0.00** (geometric mean — any zero-achievement kills it). A v2 planner with CEM + survival objectives is running.
+
+### Training dynamics
+
+<p align="center">
+  <img src="eval_results/figures/training_curves.png" width="700"/>
+</p>
+
+The full model (blue) maintains higher regularization loss than the ablated model (orange) — the IDM term forces the encoder to work harder. Both converge on prediction loss, but the ablated model's representations are less informative (proven by probes above).
+
 ### The model "dreams"
 
 Given a single starting frame and a sequence of actions, the model imagines what will happen:
@@ -149,6 +189,18 @@ Given a single starting frame and a sequence of actions, the model imagines what
 <p align="center">
   <img src="eval_results/rollout_full/dreaming_sample_0.png" width="900"/>
 </p>
+
+## Current Dataset
+
+| | Random Policy (current) | PPO Policy (planned, M1) |
+|---|---|---|
+| Episodes | 1000 | 500 PPO + 500 random |
+| Transitions | ~170k | ~300k |
+| Mean episode length | 170 steps | ~250 steps (trained survives longer) |
+| Coverage of rare states | Poor (no tools, no iron) | Good (crafting, combat, tools) |
+| Collection time | 15 min | ~1h (30min PPO training + 30min collection) |
+
+The random policy gives diverse terrain/movement coverage but never reaches deep game states (crafting chains, combat). The PPO data collection script (`collect_ppo_data.py`) trains a basic PPO agent first, then collects trajectories from it — this would dramatically improve probe accuracy on rare features.
 
 ## Quick Start
 

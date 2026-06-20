@@ -1,0 +1,28 @@
+{
+  "checkpoint_path": "/lustre/work/vivatech-dreamingmachines/smichel/checkpoints/ac_video_jepa/dev_2026-06-20_07-52/impala_cov8_std16_simt12_idm1_seed1000/latest.pth.tar",
+  "data_dir": "/lustre/work/vivatech-dreamingmachines/smichel/datasets/crafter_trajectories",
+  "probe_epochs": 10,
+  "probe_lr": 0.001,
+  "batch_size": 64,
+  "temporal_gap": 5,
+  "num_actions": 17,
+  "feature_dim": 512,
+  "train_slices": 134208,
+  "val_slices": 15168,
+  "sequence_length": 17,
+  "trained_encoder": {
+    "idm_accuracy": 0.24006544053554535,
+    "next_state_cosine_sim": 0.9906985759735107,
+    "temporal_ordering_accuracy": 0.8821861743927002
+  },
+  "random_encoder": {
+    "idm_accuracy": 0.2301143854856491,
+    "next_state_cosine_sim": 0.9923996925354004,
+    "temporal_ordering_accuracy": 0.6665183305740356
+  },
+  "deltas": {
+    "idm_accuracy": 0.00995105504989624,
+    "next_state_cosine_sim": -0.0017011165618896484,
+    "temporal_ordering_accuracy": 0.21566784381866455
+  }
+}
