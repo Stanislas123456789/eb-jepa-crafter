@@ -43,8 +43,6 @@ ImpalaEncoder (3 ResNet stacks, MaxPool)
     │                    ┌─────────────────────┐
     ▼                    │ nn.Embedding(17, 32)│
 GRU Predictor ◄────────  │ (discrete actions)  │
-    <img width="3840" height="1920" alt="image" src="https://github.com/user-attachments/assets/90885b53-e9be-44d6-a965-6b814bb3b862" />
-
     │                    └─────────────────────┘
     ▼
 Next latent state
