@@ -1,4 +1,4 @@
-# JEPA World Model for Crafter
+# LeCrafter
 
 > **Hack The World(s) 2026** · Team Dreaming Machines
 >
